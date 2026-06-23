@@ -1,5 +1,8 @@
-.venv/
+.venv-quant/
 dataset/
+benchmark/
+models/
+yolov5/
 
 .vscode/
 __pycache__/
