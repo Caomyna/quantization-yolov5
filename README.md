@@ -16,21 +16,14 @@ A comprehensive quantization pipeline for converting YOLOv5s from FP32 to FP16 p
 ## 🎯 Overview
 
 This project implements a complete quantization workflow for YOLOv5s model:
-1. **Export**: Convert PyTorch model (.pt) to ONNX FP32 format
-2. **Validate**: Verify ONNX standard compliance
-3. **Quantize**: Convert FP32 to FP16 (50% size reduction)
-4. **Validate**: Verify quantized model
-5. **Benchmark**: Compare FP32 vs FP16 performance
+1. **Inspect**: Analyze checkpoint (sparsity, parameters, pruning metadata)
+2. **Export**: Convert PyTorch model (.pt) to ONNX FP32 format
+3. **Validate FP32**: Verify ONNX standard compliance and runtime inference
+4. **Quantize**: Convert FP32 to FP16 (50% size reduction)
+5. **Validate FP16**: Verify quantized model (requires CUDA for runtime)
+6. **Benchmark**: Compare FP32 vs FP16 performance (latency, throughput, memory)
 
-## ✨ Features
 
-- ✅ **Automatic Export**: Uses YOLOv5's official export script
-- ✅ **ONNX Validation**: Standard compliance checking at each stage
-- ✅ **FP16 Quantization**: Using `onnxconverter_common` with configurable parameters
-- ✅ **Comprehensive Benchmarking**: Latency, throughput, and memory metrics
-- ✅ **Standalone Visualization**: Separate module for generating comparison plots
-- ✅ **Modular Design**: Clean, reusable code structure
-- ✅ **Automatic Dataset Creation**: Dummy images for testing when no dataset available
 
 ## 📁 Project Structure
 
@@ -57,6 +50,7 @@ quantization-yolov5/
 ├── dataset/                           # Test images (optional)
 └── README.md
 ```
+
 
 ## 🔧 Installation
 
@@ -107,14 +101,20 @@ Key dependencies:
 Execute the full quantization workflow:
 
 ```bash
-python src/main.py
+python src/main.py full
 ```
 
-Or specify a command:
+Or run individual stages:
 
 ```bash
+# Inspect checkpoint only
+python src/main.py inspect
+
 # Export only
 python src/main.py export
+
+# Validate FP32 only
+python src/main.py validate
 
 # Quantize only (assumes FP32 model exists)
 python src/main.py quantize
@@ -122,28 +122,14 @@ python src/main.py quantize
 # Benchmark only (assumes both models exist)
 python src/main.py benchmark
 
-# Validate only
-python src/main.py validate
-
 # Run full pipeline
 python src/main.py full
 ```
 
-### Generate Visualizations
 
-After running the benchmark, generate plots separately:
 
-```bash
-python src/visualize_benchmark.py
-```
 
-This creates `benchmark/benchmark_comparison.png` with:
-- Latency comparison charts
-- Throughput comparison
-- Model size comparison
-- Latency distribution (box plot)
-- Performance improvements
-- Summary table
+
 
 ## 📊 Results
 
@@ -151,20 +137,29 @@ This creates `benchmark/benchmark_comparison.png` with:
 
 | Metric | FP32 | FP16 | Improvement |
 |--------|------|------|-------------|
-| **Model Size** | 28.00 MB | 14.04 MB | **-49.85%** ✓ |
-| **Avg Latency** | 122.01 ms | 216.36 ms | -77.33% (CPU) |
-| **Throughput** | 8.20 FPS | 4.62 FPS | -43.66% (CPU) |
-| **P95 Latency** | 156.85 ms | 279.66 ms | -78.28% |
-| **P99 Latency** | 189.33 ms | 305.40 ms | -61.32% |
+| **Model Size** | 27.60 MB | 13.87 MB | **-49.8%** ✓ |
+| **Avg Latency (CPU)** | ~125 ms | N/A | Requires CUDA |
+| **Throughput (CPU)** | ~8 FPS | N/A | Requires CUDA |
 
-**Note**: On CPU, FP16 may be slower due to lack of native FP16 acceleration. On GPU with FP16 support (e.g., NVIDIA Tensor Cores), you'll see significant speedup (2-8x faster).
+
+
+### Output Files
+
+- `weights/*_fp32.onnx` - Exported FP32 model
+- `weights/*_fp16.onnx` - Quantized FP16 model (50% smaller)
+- `logs/checkpoint_report.json` - Checkpoint inspection results
+- `logs/validation_fp32_report.json` - FP32 validation results
+- `logs/validation_fp16_report.json` - FP16 validation results
+- `logs/benchmark_results.json` - Detailed benchmark metrics
+- `logs/benchmark_results.csv` - Benchmark metrics (CSV)
+- `logs/summary.json` - Unified pipeline summary
+- `logs/summary.md` - Human-readable summary
 
 ### Output Files
 
 - `models/yolov5s_fp32.onnx` - Original FP32 model (28 MB)
 - `models/yolov5s_fp16.onnx` - Quantized FP16 model (14 MB)
 - `benchmark/benchmark_results.json` - Detailed metrics in JSON format
-- `benchmark/benchmark_comparison.png` - Visualization plots
 
 ## ⚙️ Configuration
 
@@ -198,126 +193,44 @@ BENCHMARK_CONFIG = {
 }
 ```
 
-## 🔄 Extending to INT8
 
-The modular design makes it easy to add INT8 quantization:
-
-1. **Create `src/quantize_int8.py`**:
-```python
-from onnxconverter_common import convert
-
-def quantize_fp32_to_int8():
-    # Load FP32 model
-    model_proto = onnx.load(str(ONNX_FP32_PATH))
-    
-    # INT8 quantization with calibration
-    quantized_model = convert(
-        model_proto,
-        min_positive_val=1e-7,
-        max_finite_val=3.4e+38,
-        # Add calibration data here
-    )
-    
-    # Save INT8 model
-    onnx.save(quantized_model, str(ONNX_INT8_PATH))
-    return quantized_model
-```
-
-2. **Update `src/main.py`**:
-```python
-from quantize_int8 import quantize_fp32_to_int8
-
-# Add new step
-def step_3_quantize_int8(self):
-    quantized_model = quantize_fp32_to_int8()
-    # ... validation and benchmarking
-```
-
-3. **Update config.py**:
-```python
-ONNX_INT8_PATH = MODELS_DIR / "yolov5s_int8.onnx"
 ```
 
 ## 🛠️ Technical Details
 
-### Export Process
-- Uses YOLOv5's official `export.py` script via subprocess
-- Avoids SSL/network issues by using local YOLOv5 repository
-- Automatically handles file naming (yolov5s.onnx → yolov5s_fp32.onnx)
+### Dynamic Provider Selection
 
-### Validation
-- ONNX checker validation (structural and semantic)
-- ModelProto validation
-- Tensor shape verification
-- Opset version compliance
+The pipeline automatically selects the best available ONNX Runtime provider:
 
-### Quantization
-- Uses `onnxconverter_common.float16.float16_convert_point`
-- Converts all tensors to FP16 except inputs/outputs (if `keep_io_types=True`)
-- Preserves model structure and operations
+```python
+def _get_providers():
+    available = ort.get_available_providers()
+    if "CUDAExecutionProvider" in available:
+        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    return ["CPUExecutionProvider"]
+```
+
+- **With CUDA**: FP16 runs on GPU (2-8x speedup)
+- **Without CUDA**: FP16 validation passes, runtime is skipped gracefully
+
+### Quantization Strategy
+
+- Uses `onnxconverter_common.float16.convert_float_to_float16`
+- Converts backbone + neck to FP16
+- Keeps Detect head outputs as FP32 for post-processing compatibility
+- 50% model size reduction achieved
 
 ### Benchmarking
+
 - ONNX Runtime for inference
 - Measures latency (min, max, avg, P95, P99)
 - Calculates throughput (FPS)
-- Monitors memory usage
+- Monitors memory usage via `tracemalloc`
 - Warmup iterations for stable measurements
 
 ## 📝 Implementation Notes
 
-### Why FP16 on CPU is Slower
-- CPUs lack native FP16 arithmetic units
-- FP16 values are converted to FP32 for computation
-- Memory bandwidth savings don't outweigh conversion overhead
-- **Solution**: Use GPU (CUDA) with Tensor Cores for 2-8x speedup
-
-### Model Size Reduction
-- FP16 uses 2 bytes per value vs 4 bytes in FP32
-- 50% size reduction is expected and achieved
-- Benefits: faster loading, less memory, easier deployment
-
-### Accuracy Preservation
-- FP16 maintains sufficient precision for YOLOv5s
-- Minimal to no accuracy loss on COCO dataset
-- Always validate on your specific dataset
-
-## 🐛 Troubleshooting
-
-### SSL Errors During Export
-The pipeline uses YOLOv5's local export script to avoid SSL issues. If you encounter network errors, ensure the `yolov5/` directory exists.
-
-### Missing Dependencies
-```bash
-pip install onnx onnxconverter-common onnxruntime opencv-python matplotlib seaborn psutil
-```
-
-### Out of Memory
-Reduce batch size or image resolution in `config.py`:
-```python
-ONNX_EXPORT_CONFIG = {
-    "opset_version": 12,
-    "dynamic_axes": True,
-    "simplify": True,
-}
-```
-
-## 📄 License
-
-This project is for educational and research purposes. YOLOv5 is licensed under AGPL-3.0.
-
-## 🙏 Acknowledgments
-
-- [Ultralytics YOLOv5](https://github.com/ultralytics/yolov5) - Model architecture
-- [ONNX Runtime](https://github.com/microsoft/onnxruntime) - Inference engine
-- [ONNX Converter](https://github.com/microsoft/onnxconverter-common) - Quantization tools
-
-## 📧 Contact
-
-For questions or issues, please open an issue on GitHub.
-
----
-
-**Status**: ✅ Production Ready  
-**Last Updated**: 2026-06-23  
-**Python Version**: 3.9+  
-**Framework**: PyTorch 2.8.0, ONNX 1.18.0
+### Why FP16 on CPU is Not Supported for Runtime
+- ONNX Runtime CPU does not support FP16 Conv operations
+- The `convert_float_to_float16` converter inserts internal Cast nodes that are incompatible with CPU
+- **Solution**: FP16 models are validated (checker + shape inference) but runtime inference requires CUDA

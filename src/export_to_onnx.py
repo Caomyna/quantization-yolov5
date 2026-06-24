@@ -1,144 +1,111 @@
 """
-Export YOLOv5s PyTorch model (.pt) to ONNX FP32 format.
-Returns ModelProto object representing the graph model.
+Export PyTorch checkpoint to ONNX FP32.
+Loads checkpoint, builds model, loads weights, exports to ONNX.
 """
 
+import sys
 import torch
 import onnx
-import subprocess
-import shutil
+import logging
 from pathlib import Path
+
 from config import YOLOV5S_PT_PATH, ONNX_FP32_PATH, ONNX_EXPORT_CONFIG
-from validate_onnx import validate_model_proto
+from inspect_checkpoint import extract_state_dict
+
+ROOT = Path(__file__).resolve().parents[1]   # project root
+YOLOV5_DIR = ROOT / "yolov5"
+
+sys.path.insert(0, str(ROOT))        # để import src/config
+sys.path.insert(0, str(YOLOV5_DIR))  # để import yolov5 models
+
+logger = logging.getLogger(__name__)
 
 
-def load_and_export_model():
-    """
-    Load YOLOv5s PyTorch model and export to ONNX FP32.
-    
-    Returns:
-        onnx.ModelProto: The exported ONNX model object
-        
-    Raises:
-        FileNotFoundError: If the PyTorch model file doesn't exist
-        RuntimeError: If export fails
-    """
-    # Check if PyTorch model exists
-    if not YOLOV5S_PT_PATH.exists():
-        raise FileNotFoundError(f"PyTorch model not found at: {YOLOV5S_PT_PATH}")
-    
-    print(f"[INFO] Loading YOLOv5s model from: {YOLOV5S_PT_PATH}")
-    
-    # Export to ONNX using YOLOv5's export script
-    print(f"[INFO] Exporting model to ONNX FP32...")
-    print(f"[INFO] Using YOLOv5 export script")
-    print(f"[INFO] Opset version: {ONNX_EXPORT_CONFIG['opset_version']}")
-    
-    try:
-        # Use YOLOv5's official export script
-        result = subprocess.run(
-            [
-                "python",
-                "yolov5/export.py",
-                "--weights", str(YOLOV5S_PT_PATH),
-                "--include", "onnx",
-                "--opset", str(ONNX_EXPORT_CONFIG['opset_version'])
-            ],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        
-        print(f"[INFO] Export script output:")
-        print(result.stdout)
-        
-        if result.stderr:
-            print(f"[WARNING] Export script warnings:")
-            print(result.stderr)
-        
-        # YOLOv5 export saves as yolov5s.onnx, move to yolov5s_fp32.onnx
-        exported_path = YOLOV5S_PT_PATH.parent / "yolov5s.onnx"
-        if exported_path.exists() and exported_path != ONNX_FP32_PATH:
-            # Use shutil.move to handle existing files (overwrites if exists)
-            shutil.move(str(exported_path), str(ONNX_FP32_PATH))
-            print(f"[INFO] Moved {exported_path} to {ONNX_FP32_PATH}")
-        
-        print(f"[SUCCESS] Model exported to: {ONNX_FP32_PATH}")
-        
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f"YOLOv5 export failed: {e.stderr}")
-    except Exception as e:
-        raise RuntimeError(f"Failed to export model to ONNX: {str(e)}")
-    
-    # Load and return the ONNX ModelProto object
-    print("[INFO] Loading ONNX ModelProto object...")
-    try:
-        model_proto = onnx.load(str(ONNX_FP32_PATH))
-        print(f"[SUCCESS] ModelProto loaded successfully")
-        print(f"[INFO] Model graph name: {model_proto.graph.name}")
-        print(f"[INFO] Inputs: {[inp.name for inp in model_proto.graph.input]}")
-        print(f"[INFO] Outputs: {[out.name for out in model_proto.graph.output]}")
-        return model_proto
-    except Exception as e:
-        raise RuntimeError(f"Failed to load ONNX ModelProto: {str(e)}")
+def load_checkpoint(pt_path: Path) -> dict:
+    """Load PyTorch checkpoint on CPU."""
+    pt_path = Path(pt_path)
+    if not pt_path.exists():
+        raise FileNotFoundError(f"Checkpoint not found: {pt_path}")
+    logger.info(f"Loading: {pt_path} ({pt_path.stat().st_size / 1024**2:.2f} MB)")
+    return torch.load(pt_path, map_location="cpu")
 
 
-def get_model_info(model_proto):
-    """
-    Extract and display model information.
-    
-    Args:
-        model_proto: ONNX ModelProto object
-        
-    Returns:
-        dict: Model information
-    """
-    info = {
-        'ir_version': model_proto.ir_version,
-        'opset_version': model_proto.opset_import[0].version if model_proto.opset_import else None,
-        'producer_name': model_proto.producer_name,
-        'graph_name': model_proto.graph.name,
-        'num_inputs': len(model_proto.graph.input),
-        'num_outputs': len(model_proto.graph.output),
-        'num_nodes': len(model_proto.graph.node),
-    }
-    
-    print("\n[INFO] Model Information:")
-    print(f"  - IR Version: {info['ir_version']}")
-    print(f"  - Opset Version: {info['opset_version']}")
-    print(f"  - Producer: {info['producer_name']}")
-    print(f"  - Graph Name: {info['graph_name']}")
-    print(f"  - Inputs: {info['num_inputs']}")
-    print(f"  - Outputs: {info['num_outputs']}")
-    print(f"  - Nodes: {info['num_nodes']}")
-    
-    return info
+def build_model(yaml_path: str = "yolov5/models/yolov5s.yaml") -> torch.nn.Module:
+    """Rebuild YOLOv5 architecture from YAML."""
+    from yolov5.models.yolo import Model
+    logger.info(f"Building model from: {yaml_path}")
+    return Model(yaml_path)
+
+
+def load_weights(model: torch.nn.Module, checkpoint: dict) -> torch.nn.Module:
+    """Extract state_dict and load into model (strict=False)."""
+    state_dict = extract_state_dict(checkpoint)
+    missing, unexpected = model.load_state_dict(state_dict, strict=False)
+    logger.info(f"Weights loaded: missing={len(missing)}, unexpected={len(unexpected)}")
+    return model
+
+
+def export_to_onnx(
+    model: torch.nn.Module,
+    output_path: Path = ONNX_FP32_PATH,
+    opset: int = None,
+    dynamic: bool = True,
+) -> onnx.ModelProto:
+    """Export model to ONNX FP32 and return ModelProto."""
+    opset = opset or ONNX_EXPORT_CONFIG["opset_version"]
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    model.eval()
+    dummy = torch.randn(1, 3, 640, 640)
+    dynamic_axes = {"images": {0: "batch"}, "output": {0: "batch"}} if dynamic else None
+
+    torch.onnx.export(
+        model,
+        dummy,
+        str(output_path),
+        opset_version=opset,
+        input_names=["images"],
+        output_names=["output"],
+        dynamic_axes=dynamic_axes,
+    )
+
+    logger.info(f"ONNX exported: {output_path} ({output_path.stat().st_size / 1024**2:.2f} MB)")
+    return onnx.load(str(output_path))
+
+
+def export_model(
+    pt_path: Path = None,
+    output_path: Path = None,
+    yaml_path: str = "yolov5/models/yolov5s.yaml",
+) -> onnx.ModelProto:
+    """Orchestrate full export: load → build → load_weights → export."""
+    pt_path = pt_path or YOLOV5S_PT_PATH
+    output_path = output_path or ONNX_FP32_PATH
+
+    logger.info("=" * 50)
+    logger.info("Export to ONNX FP32")
+    logger.info("=" * 50)
+
+    checkpoint = load_checkpoint(pt_path)
+    model = build_model(yaml_path)
+    model = load_weights(model, checkpoint)
+    model_proto = export_to_onnx(model, output_path)
+
+    logger.info("Export done")
+    return model_proto
 
 
 def main():
-    """Main execution function."""
-    print("=" * 70)
-    print("YOLOv5s FP32 ONNX Export Pipeline")
-    print("=" * 70)
-    
-    # Export model and get ModelProto
-    model_proto = load_and_export_model()
-    
-    # Validate using validate_onnx module
-    is_valid, message = validate_model_proto(model_proto, "Exported FP32 Model")
-    if not is_valid:
-        raise RuntimeError(f"Model validation failed: {message}")
-    
-    # Get model info
-    model_info = get_model_info(model_proto)
-    
-    print("\n" + "=" * 70)
-    print("Export completed successfully!")
-    print(f"FP32 ONNX model saved to: {ONNX_FP32_PATH}")
-    print("=" * 70)
-    
-    return model_proto, is_valid, model_info
+    """Entry point."""
+    ROOT = Path(__file__).resolve().parents[1]
+    sys.path.append(str(ROOT))
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()])
+
+    export_model()
+    logger.info("Done")
 
 
 if __name__ == "__main__":
-    model_proto, is_valid, model_info = main()
+    main()

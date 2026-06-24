@@ -1,369 +1,237 @@
 """
-Main orchestration script for YOLOv5s FP32 to FP16 quantization pipeline.
-Executes the complete workflow: Export → Validate → Quantize → Validate → Benchmark
+Main orchestration script.
+Runs: Inspect → Export → Validate FP32 → Quantize → Validate FP16 → Benchmark → Report
 """
 
 import sys
 import time
-import onnx
+import json
+import logging
 from pathlib import Path
 from datetime import datetime
 
 from config import (
     YOLOV5S_PT_PATH, ONNX_FP32_PATH, ONNX_FP16_PATH,
-    ensure_directories, get_model_paths
+    ensure_directories, get_model_paths, PIPELINE_LOG_PATH, LOGS_DIR
 )
 
-# Import pipeline modules
-from config import BENCHMARK_RESULTS_PATH, BENCHMARK_PLOT_PATH
-from config import DATASET_DIR, BENCHMARK_CONFIG
-from export_to_onnx import load_and_export_model, get_model_info
-from validate_onnx import validate_onnx_model, validate_model_proto
-from quantize_fp16 import quantize_fp32_to_fp16, print_quantization_info
-from benchmark import (
-    ONNXInferenceBenchmark, load_test_images,
-    compare_benchmarks, save_results
+from inspect_checkpoint import inspect_checkpoint, save_report as save_ckpt_report
+from export_to_onnx import export_model
+from validate_onnx import validate_onnx, save_report as save_val_report
+from quantize_fp16 import quantize_model
+from benchmark import benchmark_models
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(PIPELINE_LOG_PATH, mode='w', encoding='utf-8')
+    ]
 )
+logger = logging.getLogger(__name__)
 
 
 class QuantizationPipeline:
-    """Main pipeline class for FP32 to FP16 quantization."""
-    
+    """Pipeline: Inspect → Export → Validate FP32 → Quantize → Validate FP16 → Benchmark → Report."""
+
     def __init__(self):
-        """Initialize the pipeline."""
         self.start_time = time.time()
         self.steps_completed = []
         self.errors = []
-        
-        # Ensure directories exist
         ensure_directories()
-        
-        print("=" * 70)
-        print("YOLOv5s FP32 to FP16 Quantization Pipeline")
-        print("=" * 70)
-        print(f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Working directory: {Path.cwd()}")
-        print("=" * 70)
-    
-    def step_1_export_onnx(self) -> bool:
-        """
-        Step 1: Export PyTorch model to ONNX FP32.
-        
-        Returns:
-            bool: True if successful
-        """
-        print("\n" + "=" * 70)
-        print("STEP 1: Export YOLOv5s to ONNX FP32")
-        print("=" * 70)
-        
+
+        logger.info("=" * 50)
+        logger.info("Quantization Pipeline")
+        logger.info("=" * 50)
+        logger.info(f"Start: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"Log: {PIPELINE_LOG_PATH}")
+        logger.info("=" * 50)
+
+    def step_1_inspect(self) -> bool:
+        """Stage 1: Inspect checkpoint."""
+        logger.info("-" * 50)
+        logger.info("Stage 1: Inspect Checkpoint")
+        logger.info("-" * 50)
         try:
-            # Check if PyTorch model exists
-            if not YOLOV5S_PT_PATH.exists():
-                raise FileNotFoundError(
-                    f"PyTorch model not found at: {YOLOV5S_PT_PATH}\n"
-                    f"Please download yolov5s.pt from https://github.com/ultralytics/yolov5"
-                )
-            
-            # Export model
-            model_proto = load_and_export_model()
-            
-            # Display model info
-            model_info = get_model_info(model_proto)
-            
-            print("\n[SUCCESS] Step 1 completed: ONNX FP32 model exported")
-            self.steps_completed.append("Step 1: Export to ONNX FP32")
+            report = inspect_checkpoint()
+            save_ckpt_report(report, LOGS_DIR / "checkpoint_report.json")
+            self.steps_completed.append("Stage 1: Inspect checkpoint")
             return True
-            
         except Exception as e:
-            error_msg = f"Step 1 failed: {str(e)}"
-            print(f"\n[ERROR] {error_msg}")
-            self.errors.append(error_msg)
+            self.errors.append(f"Stage 1 failed: {e}")
+            logger.error(f"Stage 1 failed: {e}")
             return False
-    
-    def step_2_validate_fp32(self) -> bool:
-        """
-        Step 2: Validate FP32 ONNX model.
-        
-        Returns:
-            bool: True if successful
-        """
-        print("\n" + "=" * 70)
-        print("STEP 2: Validate FP32 ONNX Model")
-        print("=" * 70)
-        
+
+    def step_2_export(self) -> bool:
+        """Stage 2: Export to ONNX FP32."""
+        logger.info("-" * 50)
+        logger.info("Stage 2: Export to ONNX FP32")
+        logger.info("-" * 50)
         try:
-            # Validate using file path
-            is_valid, message = validate_onnx_model(ONNX_FP32_PATH)
-            
-            if not is_valid:
-                raise RuntimeError(f"FP32 model validation failed: {message}")
-            
-            # Also validate using ModelProto
-            model_proto = onnx.load(str(ONNX_FP32_PATH))
-            is_valid_proto, message_proto = validate_model_proto(model_proto, "FP32 Model")
-            
-            if not is_valid_proto:
-                raise RuntimeError(f"FP32 ModelProto validation failed: {message_proto}")
-            
-            print("\n[SUCCESS] Step 2 completed: FP32 model validated")
-            self.steps_completed.append("Step 2: Validate FP32 model")
+            export_model()
+            self.steps_completed.append("Stage 2: Export to ONNX FP32")
             return True
-            
         except Exception as e:
-            error_msg = f"Step 2 failed: {str(e)}"
-            print(f"\n[ERROR] {error_msg}")
-            self.errors.append(error_msg)
+            self.errors.append(f"Stage 2 failed: {e}")
+            logger.error(f"Stage 2 failed: {e}")
             return False
-    
-    def step_3_quantize_fp16(self) -> bool:
-        """
-        Step 3: Quantize FP32 model to FP16.
-        
-        Returns:
-            bool: True if successful
-        """
-        print("\n" + "=" * 70)
-        print("STEP 3: Quantize FP32 to FP16")
-        print("=" * 70)
-        
+
+    def step_3_validate_fp32(self) -> bool:
+        """Stage 3: Validate FP32 ONNX."""
+        logger.info("-" * 50)
+        logger.info("Stage 3: Validate FP32 ONNX")
+        logger.info("-" * 50)
         try:
-            # Perform quantization
-            quantized_model = quantize_fp32_to_fp16()
-            
-            # Print quantization info
-            print_quantization_info(quantized_model)
-            
-            # Validate the quantized model
-            is_valid, message = validate_onnx_model(ONNX_FP16_PATH)
-            
-            if not is_valid:
-                print(f"[WARNING] FP16 model validation issue: {message}")
-                print("[INFO] Continuing with benchmarking...")
-            else:
-                print("\n[SUCCESS] FP16 model validation passed")
-            
-            print("\n[SUCCESS] Step 3 completed: FP16 quantization finished")
-            self.steps_completed.append("Step 3: Quantize to FP16")
+            report = validate_onnx(ONNX_FP32_PATH)
+            save_val_report(report, LOGS_DIR / "validation_fp32_report.json")
+            self.steps_completed.append("Stage 3: Validate FP32 ONNX")
             return True
-            
         except Exception as e:
-            error_msg = f"Step 3 failed: {str(e)}"
-            print(f"\n[ERROR] {error_msg}")
-            self.errors.append(error_msg)
+            self.errors.append(f"Stage 3 failed: {e}")
+            logger.error(f"Stage 3 failed: {e}")
             return False
-    
-    def step_4_validate_fp16(self) -> bool:
-        """
-        Step 4: Validate FP16 ONNX model.
-        
-        Returns:
-            bool: True if successful
-        """
-        print("\n" + "=" * 70)
-        print("STEP 4: Validate FP16 ONNX Model")
-        print("=" * 70)
-        
+
+    def step_4_quantize(self) -> bool:
+        """Stage 4: Quantize FP32 → FP16."""
+        logger.info("-" * 50)
+        logger.info("Stage 4: Quantize FP32 → FP16")
+        logger.info("-" * 50)
         try:
-            # Validate FP16 model
-            is_valid, message = validate_onnx_model(ONNX_FP16_PATH)
-            
-            if not is_valid:
-                raise RuntimeError(f"FP16 model validation failed: {message}")
-            
-            # Also validate using ModelProto
-            model_proto = onnx.load(str(ONNX_FP16_PATH))
-            is_valid_proto, message_proto = validate_model_proto(model_proto, "FP16 Model")
-            
-            if not is_valid_proto:
-                raise RuntimeError(f"FP16 ModelProto validation failed: {message_proto}")
-            
-            print("\n[SUCCESS] Step 4 completed: FP16 model validated")
-            self.steps_completed.append("Step 4: Validate FP16 model")
+            quantize_model()
+            self.steps_completed.append("Stage 4: Quantize FP32 → FP16")
             return True
-            
         except Exception as e:
-            error_msg = f"Step 4 failed: {str(e)}"
-            print(f"\n[ERROR] {error_msg}")
-            self.errors.append(error_msg)
+            self.errors.append(f"Stage 4 failed: {e}")
+            logger.error(f"Stage 4 failed: {e}")
             return False
-    
-    def step_5_benchmark(self) -> bool:
-        """
-        Step 5: Benchmark FP32 vs FP16 models.
-        
-        Returns:
-            bool: True if successful
-        """
-        print("\n" + "=" * 70)
-        print("STEP 5: Benchmark FP32 vs FP16")
-        print("=" * 70)
-        
+
+    def step_5_validate_fp16(self) -> bool:
+        """Stage 5: Validate FP16 ONNX."""
+        logger.info("-" * 50)
+        logger.info("Stage 5: Validate FP16 ONNX")
+        logger.info("-" * 50)
         try:
-            # Load test images
-            try:
-                image_paths = load_test_images(DATASET_DIR, max_images=1000)
-            except Exception as e:
-                print(f"[WARNING] {str(e)}")
-                print("[INFO] Creating dummy test images for benchmarking...")
-                # Create dummy images for testing
-                DATASET_DIR.mkdir(parents=True, exist_ok=True)
-                import numpy as np
-                import cv2
-                image_paths = []
-                for i in range(10):
-                    dummy_img = np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)
-                    dummy_path = DATASET_DIR / f"dummy_{i}.jpg"
-                    cv2.imwrite(str(dummy_path), dummy_img)
-                    image_paths.append(dummy_path)
-                print(f"[INFO] Created {len(image_paths)} dummy test images")
-            
-            warmup = BENCHMARK_CONFIG['warmup_iterations']
-            iterations = BENCHMARK_CONFIG['num_iterations']
-            
-            # Benchmark FP32
-            print("\n" + "-" * 70)
-            print("Benchmarking FP32 Model")
-            print("-" * 70)
-            fp32_benchmark = ONNXInferenceBenchmark(ONNX_FP32_PATH, "FP32")
-            fp32_metrics = fp32_benchmark.benchmark(
-                image_paths,
-                warmup_iterations=warmup,
-                num_iterations=iterations
-            )
-            fp32_benchmark.print_metrics(fp32_metrics)
-            
-            # Benchmark FP16
-            print("\n" + "-" * 70)
-            print("Benchmarking FP16 Model")
-            print("-" * 70)
-            fp16_benchmark = ONNXInferenceBenchmark(ONNX_FP16_PATH, "FP16")
-            fp16_metrics = fp16_benchmark.benchmark(
-                image_paths,
-                warmup_iterations=warmup,
-                num_iterations=iterations
-            )
-            fp16_benchmark.print_metrics(fp16_metrics)
-            
-            # Compare results
-            comparison = compare_benchmarks(fp32_metrics, fp16_metrics)
-            
-            # Save results
-            save_results(fp32_metrics, fp16_metrics, comparison, BENCHMARK_RESULTS_PATH)
-            
-            print("\n[INFO] To visualize results, run: python src/visualize_benchmark.py")
-            print("\n[SUCCESS] Step 5 completed: Benchmarking finished")
-            self.steps_completed.append("Step 5: Benchmark FP32 vs FP16")
+            report = validate_onnx(ONNX_FP16_PATH)
+            save_val_report(report, LOGS_DIR / "validation_fp16_report.json")
+            self.steps_completed.append("Stage 5: Validate FP16 ONNX")
             return True
-            
         except Exception as e:
-            error_msg = f"Step 5 failed: {str(e)}"
-            print(f"\n[ERROR] {error_msg}")
-            self.errors.append(error_msg)
+            self.errors.append(f"Stage 5 failed: {e}")
+            logger.error(f"Stage 5 failed: {e}")
             return False
-    
+
+    def step_6_benchmark(self) -> bool:
+        """Stage 6: Benchmark FP32 vs FP16."""
+        logger.info("-" * 50)
+        logger.info("Stage 6: Benchmark FP32 vs FP16")
+        logger.info("-" * 50)
+        try:
+            benchmark_models()
+            self.steps_completed.append("Stage 6: Benchmark FP32 vs FP16")
+            return True
+        except Exception as e:
+            self.errors.append(f"Stage 6 failed: {e}")
+            logger.error(f"Stage 6 failed: {e}")
+            return False
+
     def run_pipeline(self, skip_steps: list = None):
-        """
-        Run the complete pipeline.
-        
-        Args:
-            skip_steps: List of step numbers to skip (e.g., [1, 2] to skip export and validation)
-        """
+        """Run pipeline stages."""
         skip_steps = skip_steps or []
-        
-        # Define pipeline steps
         steps = [
-            (1, "Export to ONNX FP32", self.step_1_export_onnx),
-            (2, "Validate FP32", self.step_2_validate_fp32),
-            (3, "Quantize to FP16", self.step_3_quantize_fp16),
-            (4, "Validate FP16", self.step_4_validate_fp16),
-            (5, "Benchmark", self.step_5_benchmark),
+            (1, "Inspect Checkpoint", self.step_1_inspect),
+            (2, "Export to ONNX FP32", self.step_2_export),
+            (3, "Validate FP32 ONNX", self.step_3_validate_fp32),
+            (4, "Quantize FP32 → FP16", self.step_4_quantize),
+            (5, "Validate FP16 ONNX", self.step_5_validate_fp16),
+            (6, "Benchmark FP32 vs FP16", self.step_6_benchmark),
         ]
-        
-        # Execute steps
-        for step_num, step_name, step_func in steps:
-            if step_num in skip_steps:
-                print(f"\n[INFO] Skipping {step_name} (step {step_num})")
+        for num, name, func in steps:
+            if num in skip_steps:
+                logger.info(f"Skipping {name}")
                 continue
-            
-            success = step_func()
-            
-            if not success:
-                print(f"\n[ERROR] Pipeline stopped at {step_name}")
+            if not func():
+                logger.error(f"Pipeline stopped at {name}")
                 break
-        
-        # Print summary
+        # self.generate_final_report()
         self.print_summary()
-    
+
+    # def generate_final_report(self):
+    #     """Stage 7: Merge all reports into summary.json and summary.md."""
+    #     logger.info("-" * 50)
+    #     logger.info("Stage 7: Generate Final Report")
+    #     logger.info("-" * 50)
+
+    #     reports = {}
+    #     for name in ["checkpoint_report.json", "validation_fp32_report.json",
+    #                  "validation_fp16_report.json", "benchmark_results.json"]:
+    #         path = LOGS_DIR / name
+    #         if path.exists():
+    #             with open(path) as f:
+    #                 reports[name.replace("_report.json", "").replace("_results.json", "")] = json.load(f)
+
+    #     summary = {
+    #         "timestamp": datetime.now().isoformat(),
+    #         "pipeline": "quantization-yolov5",
+    #         "stages_completed": self.steps_completed,
+    #         "reports": reports,
+    #     }
+
+    #     summary_json = LOGS_DIR / "summary.json"
+    #     with open(summary_json, "w") as f:
+    #         json.dump(summary, f, indent=2, default=str)
+    #     logger.info(f"Summary JSON: {summary_json}")
+
+    #     summary_md = LOGS_DIR / "summary.md"
+    #     with open(summary_md, "w") as f:
+    #         f.write("# Quantization Pipeline Summary\n\n")
+    #         f.write(f"**Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+    #         f.write("## Stages Completed\n\n")
+    #         for s in self.steps_completed:
+    #             f.write(f"- ✓ {s}\n")
+    #         f.write("\n## Reports\n\n")
+    #         for key in reports:
+    #             f.write(f"- {key}: `logs/{key}_report.json`\n")
+    #     logger.info(f"Summary Markdown: {summary_md}")
+
     def print_summary(self):
-        """Print pipeline execution summary."""
-        end_time = time.time()
-        duration = end_time - self.start_time
-        
-        print("\n" + "=" * 70)
-        print("PIPELINE EXECUTION SUMMARY")
-        print("=" * 70)
-        print(f"Total time: {duration:.2f} seconds ({duration/60:.2f} minutes)")
-        print(f"End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        print(f"\nCompleted steps ({len(self.steps_completed)}/{5}):")
-        for step in self.steps_completed:
-            print(f"  ✓ {step}")
-        
-        if self.errors:
-            print(f"\nErrors ({len(self.errors)}):")
-            for error in self.errors:
-                print(f"  ✗ {error}")
-        
-        print("\nOutput files:")
-        model_paths = get_model_paths()
-        for key, path in model_paths.items():
-            path_obj = Path(path)
-            if path_obj.exists():
-                size_mb = path_obj.stat().st_size / (1024 * 1024)
-                print(f"  - {key}: {path} ({size_mb:.2f} MB)")
-        
-        if BENCHMARK_RESULTS_PATH.exists():
-            print(f"  - Benchmark results: {BENCHMARK_RESULTS_PATH}")
-        if BENCHMARK_PLOT_PATH.exists():
-            print(f"  - Benchmark plot: {BENCHMARK_PLOT_PATH}")
-        
-        print("=" * 70)
-        
-        if len(self.steps_completed) == 5:
-            print("\n[SUCCESS] Pipeline completed successfully!")
-        else:
-            print(f"\n[WARNING] Pipeline completed with {len(self.errors)} error(s)")
+        """Print execution summary."""
+        elapsed = time.time() - self.start_time
+        logger.info("=" * 50)
+        logger.info("SUMMARY")
+        logger.info("=" * 50)
+        logger.info(f"Time: {elapsed:.2f}s")
+        logger.info(f"Completed: {len(self.steps_completed)}/{6}")
+        for s in self.steps_completed:
+            logger.info(f"  ✓ {s}")
+        for e in self.errors:
+            logger.info(f"  ✗ {e}")
+        logger.info("=" * 50)
 
 
 def main():
-    """Main entry point."""
+    """Entry point."""
     pipeline = QuantizationPipeline()
-    
-    # Check command line arguments
+
     if len(sys.argv) > 1:
-        command = sys.argv[1].lower()
-        
-        if command == "export":
-            # Only export
-            pipeline.run_pipeline(skip_steps=[2, 3, 4, 5])
-        elif command == "quantize":
-            # Only quantize (assumes FP32 model exists)
-            pipeline.run_pipeline(skip_steps=[1, 2, 4, 5])
-        elif command == "benchmark":
-            # Only benchmark (assumes both models exist)
-            pipeline.run_pipeline(skip_steps=[1, 2, 3, 4])
-        elif command == "validate":
-            # Only validate
-            pipeline.run_pipeline(skip_steps=[1, 3, 5])
-        elif command == "full":
-            # Run full pipeline
+        cmd = sys.argv[1].lower()
+        if cmd == "inspect":
+            pipeline.run_pipeline(skip_steps=[2, 3, 4, 5, 6])
+        elif cmd == "export":
+            pipeline.run_pipeline(skip_steps=[1, 3, 4, 5, 6])
+        elif cmd == "validate":
+            pipeline.run_pipeline(skip_steps=[1, 2, 4, 5, 6])
+        elif cmd == "quantize":
+            pipeline.run_pipeline(skip_steps=[1, 2, 3, 5, 6])
+        elif cmd == "benchmark":
+            pipeline.run_pipeline(skip_steps=[1, 2, 3, 4, 5])
+        elif cmd == "full":
             pipeline.run_pipeline()
         else:
-            print(f"Unknown command: {command}")
-            print("Available commands: export, quantize, benchmark, validate, full")
+            logger.error(f"Unknown: {cmd}")
+            logger.info("Commands: inspect, export, validate, quantize, benchmark, full")
             sys.exit(1)
     else:
-        # Default: run full pipeline
         pipeline.run_pipeline()
 
 

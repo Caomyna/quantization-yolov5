@@ -1,6 +1,6 @@
 .venv-quant/
 dataset/
-benchmark/
+benchmark/benchmark_comparison.png
 models/
 yolov5/
 

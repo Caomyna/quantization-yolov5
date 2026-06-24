@@ -1,0 +1,71 @@
+{
+  "model_path": "E:\\ai-intern\\quantization-yolov5\\weights\\magnitude_0.3_recovered_fp16.onnx",
+  "checker_passed": true,
+  "runtime": {
+    "inference_successful": false,
+    "error": "FP16 requires CUDAExecutionProvider",
+    "details": "Failed to create ONNX Runtime session with providers ['CUDAExecutionProvider', 'CPUExecutionProvider']: [ONNXRuntimeError] : 1 : FAIL : Type Error: Type (tensor(float16)) of output arg (/model.24/Cast_5_output_0) of node (/model.24/Cast_5) does not match expected type (tensor(float))."
+  },
+  "graph": {
+    "graph_name": "main_graph",
+    "ir_version": 7,
+    "opset_version": 12,
+    "producer_name": "pytorch",
+    "producer_version": "2.8.0",
+    "num_inputs": 1,
+    "num_outputs": 4,
+    "num_nodes": 576,
+    "num_initializers": 71,
+    "inputs": [
+      {
+        "name": "images",
+        "shape": [
+          0,
+          3,
+          640,
+          640
+        ]
+      }
+    ],
+    "outputs": [
+      {
+        "name": "output",
+        "shape": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "name": "onnx::Sigmoid_636",
+        "shape": [
+          0,
+          3,
+          80,
+          80,
+          85
+        ]
+      },
+      {
+        "name": "onnx::Sigmoid_740",
+        "shape": [
+          0,
+          3,
+          40,
+          40,
+          85
+        ]
+      },
+      {
+        "name": "onnx::Sigmoid_844",
+        "shape": [
+          0,
+          3,
+          20,
+          20,
+          85
+        ]
+      }
+    ]
+  }
+}

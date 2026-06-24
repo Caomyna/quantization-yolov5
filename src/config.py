@@ -13,16 +13,20 @@ from pathlib import Path
 BASE_DIR = Path(__file__).parent.parent.resolve()
 
 # Model paths
-MODELS_DIR = BASE_DIR / "models"
-YOLOV5S_PT_PATH = MODELS_DIR / "yolov5s.pt"  # Original PyTorch model
-ONNX_FP32_PATH = MODELS_DIR / "yolov5s_fp32.onnx"  # Exported ONNX FP32 model
-ONNX_FP16_PATH = MODELS_DIR / "yolov5s_fp16.onnx"  # Quantized ONNX FP16 model
+MODELS_DIR = BASE_DIR / "weights"  # Directory to store models and weights
+YOLOV5S_PT_PATH = MODELS_DIR / "magnitude_0.3_recovered.pt"  # Original PyTorch model
+ONNX_FP32_PATH = MODELS_DIR / "magnitude_0.3_recovered_fp32.onnx"  # Exported ONNX FP32 model
+ONNX_FP16_PATH = MODELS_DIR / "magnitude_0.3_recovered_fp16.onnx"  # Quantized ONNX FP16 model
 
 # Dataset paths
 DATASET_DIR = BASE_DIR / "dataset"  # Folder containing ~1000 test images
 BENCHMARK_DIR = BASE_DIR / "benchmark"
-BENCHMARK_RESULTS_PATH = BENCHMARK_DIR / "benchmark_results.json"
-BENCHMARK_PLOT_PATH = BENCHMARK_DIR / "benchmark_comparison.png"
+BENCHMARK_RESULTS_PATH = BENCHMARK_DIR / "magnitude_0.3_recovered_benchmark_results.json"
+BENCHMARK_PLOT_PATH = BENCHMARK_DIR / "magnitude_0.3_recovered_benchmark_comparison.png"
+
+# Logging paths
+LOGS_DIR = BASE_DIR / "logs"
+PIPELINE_LOG_PATH = LOGS_DIR / "pipeline_log.txt"
 
 # Weights/output directory
 WEIGHTS_DIR = BASE_DIR / "weights"
@@ -41,7 +45,7 @@ QUANTIZATION_CONFIG = {
     "max_finite_val": 3.4e+38,
     
     # Convert both input and output tensors to FP16
-    "keep_io_types": True,
+    "keep_io_types": False,  # Keep weights as FP32, only activations FP16
     
     # Enable shape inference during quantization
     "disable_shape_infer": False,
@@ -108,7 +112,7 @@ ONNX_EXPORT_CONFIG = {
 
 def ensure_directories():
     """Create necessary directories if they don't exist."""
-    directories = [MODELS_DIR, BENCHMARK_DIR, WEIGHTS_DIR]
+    directories = [MODELS_DIR, BENCHMARK_DIR, WEIGHTS_DIR, LOGS_DIR]
     for directory in directories:
         directory.mkdir(parents=True, exist_ok=True)
 
