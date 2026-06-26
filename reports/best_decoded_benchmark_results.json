@@ -1,0 +1,46 @@
+{
+  "timestamp": "2026-06-26 11:57:32",
+  "model_name": "best_decoded",
+  "fp32": {
+    "model_name": "best_decoded_FP32",
+    "model_path": "E:\\ai-intern\\quantization-yolov5\\weights\\best_decoded.onnx",
+    "model_size_mb": 28.486970901489258,
+    "avg_latency_ms": 143.78990300000012,
+    "min_latency_ms": 99.89309999999918,
+    "max_latency_ms": 228.3179000000004,
+    "std_latency_ms": 21.816184963762282,
+    "p95_latency_ms": 184.49790999999996,
+    "p99_latency_ms": 223.24979299999995,
+    "throughput_fps": 6.954591241361357,
+    "total_time_sec": 14.378990300000012,
+    "peak_memory_mb": 16.41073989868164,
+    "avg_memory_mb": 16.348268356323242,
+    "num_iterations": 100,
+    "num_images": 1000,
+    "warmup_iterations": 10
+  },
+  "fp16": {
+    "model_name": "best_decoded_FP16",
+    "model_path": "E:\\ai-intern\\quantization-yolov5\\weights\\best_decoded_fp16.onnx",
+    "model_size_mb": 14.513200759887695,
+    "avg_latency_ms": 170.52663399999983,
+    "min_latency_ms": 140.83850000000098,
+    "max_latency_ms": 191.63149999999973,
+    "std_latency_ms": 12.684032182631782,
+    "p95_latency_ms": 188.55203499999965,
+    "p99_latency_ms": 190.55150899999853,
+    "throughput_fps": 5.864186588002441,
+    "total_time_sec": 17.052663399999982,
+    "peak_memory_mb": 16.43680191040039,
+    "avg_memory_mb": 16.430640411376952,
+    "num_iterations": 100,
+    "num_images": 1000,
+    "warmup_iterations": 10
+  },
+  "comparison": {
+    "latency_speedup": 0.8432,
+    "latency_reduction_pct": -18.59,
+    "throughput_improvement": 0.8432,
+    "size_reduction_pct": 49.05
+  }
+}

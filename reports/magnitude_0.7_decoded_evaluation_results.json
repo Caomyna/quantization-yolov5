@@ -1,0 +1,46 @@
+{
+  "timestamp": "2026-06-26 12:39:33",
+  "model_name": "magnitude_0.7_decoded",
+  "fp32_evaluation": {
+    "model_name": "magnitude_0.7_decoded_FP32",
+    "model_path": "E:\\ai-intern\\quantization-yolov5\\weights\\magnitude_0.7_decoded.onnx",
+    "timestamp": "2026-06-26 12:34:55",
+    "dataset": "E:\\ai-intern\\quantization-yolov5\\dataset\\coco2017\\val2017",
+    "num_images": 1000,
+    "num_predictions": 1106,
+    "elapsed_time_sec": 210.83881211280823,
+    "config": {
+      "conf_threshold": 0.25,
+      "iou_threshold": 0.45,
+      "max_images": 1000
+    },
+    "metrics": {
+      "precision": 0.038318043200158206,
+      "recall": 0.04188866924616767,
+      "f1_score": 0.04002387802257609,
+      "map50": 0.06255710760442817,
+      "map50_95": 0.038318043200158206
+    }
+  },
+  "fp16_evaluation": {
+    "model_name": "magnitude_0.7_decoded_FP16",
+    "model_path": "E:\\ai-intern\\quantization-yolov5\\weights\\magnitude_0.7_decoded_fp16.onnx",
+    "timestamp": "2026-06-26 12:39:33",
+    "dataset": "E:\\ai-intern\\quantization-yolov5\\dataset\\coco2017\\val2017",
+    "num_images": 1000,
+    "num_predictions": 1106,
+    "elapsed_time_sec": 277.76092767715454,
+    "config": {
+      "conf_threshold": 0.25,
+      "iou_threshold": 0.45,
+      "max_images": 1000
+    },
+    "metrics": {
+      "precision": 0.038227423783422323,
+      "recall": 0.04188714921562109,
+      "f1_score": 0.03997369627531092,
+      "map50": 0.06253843990064213,
+      "map50_95": 0.038227423783422323
+    }
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "timestamp": "2026-06-26 12:39:33",
+  "model_name": "best_decoded",
+  "fp32_evaluation": {
+    "model_name": "best_decoded_FP32",
+    "model_path": "E:\\ai-intern\\quantization-yolov5\\weights\\best_decoded.onnx",
+    "timestamp": "2026-06-26 12:07:02",
+    "dataset": "E:\\ai-intern\\quantization-yolov5\\dataset\\coco2017\\val2017",
+    "num_images": 1000,
+    "num_predictions": 6004,
+    "elapsed_time_sec": 429.0869605541229,
+    "config": {
+      "conf_threshold": 0.25,
+      "iou_threshold": 0.45,
+      "max_images": 1000
+    },
+    "metrics": {
+      "precision": 0.36192318772973964,
+      "recall": 0.41158573721778885,
+      "f1_score": 0.38516018945240243,
+      "map50": 0.5183814071012095,
+      "map50_95": 0.36192318772973964
+    }
+  },
+  "fp16_evaluation": {
+    "model_name": "best_decoded_FP16",
+    "model_path": "E:\\ai-intern\\quantization-yolov5\\weights\\best_decoded_fp16.onnx",
+    "timestamp": "2026-06-26 12:12:57",
+    "dataset": "E:\\ai-intern\\quantization-yolov5\\dataset\\coco2017\\val2017",
+    "num_images": 1000,
+    "num_predictions": 6007,
+    "elapsed_time_sec": 354.1580865383148,
+    "config": {
+      "conf_threshold": 0.25,
+      "iou_threshold": 0.45,
+      "max_images": 1000
+    },
+    "metrics": {
+      "precision": 0.36161475754764005,
+      "recall": 0.41130506631147695,
+      "f1_score": 0.38486263967128115,
+      "map50": 0.5191997808029035,
+      "map50_95": 0.36161475754764005
+    }
+  }
+}

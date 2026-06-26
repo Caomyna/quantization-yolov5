@@ -1,7 +1,0 @@
-metric,fp32,fp16,change
-model_size_mb,27.60,N/A,0.00%
-avg_latency_ms,127.76,N/A,0.00x
-throughput_fps,7.83,N/A,0.00x
-p95_latency_ms,157.79,N/A,
-p99_latency_ms,168.12,N/A,
-peak_memory_mb,16.42,N/A,
