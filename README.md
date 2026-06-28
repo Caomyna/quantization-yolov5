@@ -149,7 +149,7 @@ flowchart TD
     
     C --> C1[FP16 ONNX Model]
     
-    G[Video Input] --> H[Traffic Analysis Demo]
+    G[Video Input] --> H[Model ONNX FP16]
     H --> I[Annotated Video]
     H --> J[Vehicle Counts]
     
@@ -594,19 +594,3 @@ python src/evaluation/run.py --model best_decoded --max-images 1000
 
 ---
 
-## Recent Updates
-
-### Model Output Format Fix (2026-06-26)
-
-**Issue**: The detector was not handling the "decoded" model format correctly. The models output 3 separate tensors:
-- boxes: [1, N, 4] - bounding box coordinates in corner format (x1, y1, x2, y2), normalized to [0, 1]
-- scores: [1, N] - confidence scores
-- class_ids: [1, N] - predicted class IDs
-
-**Fix**: Updated `src/inference/detector.py` to:
-1. Detect when model outputs 3 tensors
-2. Convert corner format to center format (cx, cy, w, h)
-3. Scale coordinates from normalized [0, 1] to pixel coordinates (640x640)
-4. Create [N, 85] format for post-processing pipeline
-
-**Result**: Vehicle detection now works correctly with all models (FP32 and FP16).
