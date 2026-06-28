@@ -1,6 +1,5 @@
 """
 Vehicle counting utilities for traffic analysis.
-Handles counting, statistics tracking, and per-class counting.
 """
 
 from typing import Dict, List, Any, Optional
@@ -16,15 +15,6 @@ class VehicleCounter:
     Tracks vehicle counts by class and provides statistics.
     """
 
-    # COCO vehicle class IDs
-    VEHICLE_CLASSES = {
-        1: "bicycle",
-        2: "car",
-        3: "motorcycle",
-        5: "bus",
-        7: "truck"
-    }
-
     def __init__(self):
         """Initialize vehicle counter."""
         # Total counts per class
@@ -37,6 +27,8 @@ class VehicleCounter:
         self.total_vehicles = 0
         
         # Class names mapping
+        from ..core.config import VEHICLE_CLASS_IDS
+        self.vehicle_class_ids = VEHICLE_CLASS_IDS
         self.class_names = {
             1: "bicycle",
             2: "car",
@@ -61,12 +53,12 @@ class VehicleCounter:
         # Count vehicles in current frame
         for det in detections:
             class_id = det.get("class_id")
-            if class_id in self.VEHICLE_CLASSES:
+            if class_id in self.vehicle_class_ids:
                 self.frame_counts[class_id] += 1
                 self.total_counts[class_id] += 1
                 self.total_vehicles += 1
         
-        return dict(self.frame_counts)
+        return {self.class_names.get(k, f"class_{k}"): v for k, v in self.frame_counts.items()}
 
     def get_counts(self) -> Dict[str, int]:
         """
@@ -159,53 +151,3 @@ class VehicleCounter:
         lines.append("="*60)
         
         return "\n".join(lines)
-
-
-class SimpleCounter:
-    """
-    Simple vehicle counter without tracking.
-    Just counts detections per frame.
-    """
-
-    def __init__(self):
-        """Initialize simple counter."""
-        self.counts = defaultdict(int)
-        self.class_names = {
-            1: "bicycle",
-            2: "car",
-            3: "motorcycle",
-            5: "bus",
-            7: "truck"
-        }
-
-    def count_frame(self, detections: List[Dict[str, Any]]) -> Dict[str, int]:
-        """
-        Count vehicles in a single frame.
-        
-        Args:
-            detections: List of detections
-            
-        Returns:
-            Dictionary with counts for this frame
-        """
-        frame_counts = defaultdict(int)
-        
-        for det in detections:
-            class_id = det.get("class_id")
-            if class_id in self.class_names:
-                frame_counts[class_id] += 1
-                self.counts[class_id] += 1
-        
-        return {self.class_names[k]: v for k, v in frame_counts.items()}
-
-    def get_total_counts(self) -> Dict[str, int]:
-        """Get total counts across all frames."""
-        return {self.class_names[k]: v for k, v in self.counts.items()}
-
-    def get_grand_total(self) -> int:
-        """Get grand total of all vehicles."""
-        return sum(self.counts.values())
-
-    def reset(self):
-        """Reset all counts."""
-        self.counts = defaultdict(int)

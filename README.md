@@ -40,59 +40,66 @@ This project implements an end-to-end pipeline for quantizing YOLOv5 object dete
 
 ```
 quantization-yolov5/
-├── quantize/                      # Core quantization pipeline
-│   ├── __init__.py
-│   ├── config.py                  # Centralized configuration
-│   ├── validate_onnx.py           # ONNX model validation
-│   ├── quantize_fp16.py           # FP32 → FP16 conversion
-│   └── visualize_benchmark.py     # Benchmark visualization
+├── src/                            # Source code
+│   ├── core/                       # Core utilities
+│   │   ├── config.py               # Centralized configuration
+│   │   ├── path_setup.py           # Python path setup
+│   │   └── base.py                 # Base classes
+│   │
+│   ├── quantization/               # Quantization module
+│   │   ├── fp16.py                 # FP32 → FP16 conversion
+│   │   ├── validator.py            # ONNX model validation
+│   │   └── run.py                  # CLI entry point
+│   │
+│   ├── benchmarking/               # Benchmarking module
+│   │   ├── benchmark.py            # Core benchmarking logic
+│   │   ├── reporter.py             # Report generation (JSON/Excel)
+│   │   └── run.py                  # CLI entry point
+│   │
+│   ├── evaluation/                 # Evaluation module
+│   │   ├── evaluator.py            # COCO evaluation metrics
+│   │   ├── reporter.py             # Report generation (JSON/Excel)
+│   │   └── run.py                  # CLI entry point
+│   │
+│   ├── inference/                  # Inference utilities
+│   │   ├── detector.py             # YOLO model wrapper for inference
+│   │   ├── counter.py              # Vehicle counting logic
+│   │   └── video_utils.py          # Video I/O and processing
+│   │
+│   ├── preprocessing/              # Preprocessing
+│   │   └── preprocessor.py         # Image preprocessing
+│   │
+│   └── postprocessing/             # Postprocessing
+│       ├── detections.py           # Detection handling
+│       └── nms.py                  # Non-maximum suppression
 │
-├── benchmark/                     # Benchmark modules
-│   ├── __init__.py
-│   ├── benchmark_core.py          # Common benchmark functions
-│   ├── benchmark_all_models.py    # Scan all models, run benchmark, export xlsx
-│   └── benchmark_single.py        # Single model benchmark (--model)
+├── app/                            # Demo application
+│   └── run_demo.py                 # Traffic analysis demo entry point
 │
-├── evaluation/                    # Evaluation modules
-│   ├── __init__.py
-│   ├── evaluation_core.py         # COCO evaluation metrics
-│   ├── evaluate_all_models.py     # Scan all models, evaluate, export xlsx
-│   └── evaluate_single.py         # Single model evaluation (--model)
-│
-├── app/                           # Demo application
-│   └── main.py                    # Traffic analysis demo entry point
-│
-├── util/                          # Traffic analysis utilities
-│   ├── __init__.py
-│   ├── detector.py                # YOLO model wrapper for inference
-│   ├── preprocess.py              # Image preprocessing
-│   ├── postprocess.py             # Post-processing (NMS, filtering)
-│   ├── counter.py                 # Vehicle counting logic
-│   └── video_processor.py         # Video I/O and frame processing
-│
-├── weights/                       # Model weights directory
-│   ├── magnitude_0.3_decoded.onnx              # FP32 ONNX model
-│   ├── magnitude_0.3_decoded_fp16.onnx         # FP16 ONNX model
+├── weights/                        # Model weights directory
+│   ├── best_decoded.onnx           # FP32 ONNX model
+│   ├── best_decoded_fp16.onnx      # FP16 ONNX model
+│   ├── magnitude_0.3_decoded.onnx
+│   ├── magnitude_0.3_decoded_fp16.onnx
 │   ├── magnitude_0.5_decoded.onnx
 │   ├── magnitude_0.5_decoded_fp16.onnx
 │   ├── magnitude_0.7_decoded.onnx
 │   └── magnitude_0.7_decoded_fp16.onnx
 │
-├── reports/                       # Output reports
-│   ├── benchmark_summary.xlsx     # Benchmark results (all models)
-│   ├── evaluation_summary.xlsx    # Evaluation results (all models)
-│   └── *.json                     # Individual model reports
+├── reports/                        # Output reports
+│   ├── benchmark_summary.xlsx      # Benchmark results (all models)
+│   ├── evaluation_summary.xlsx     # Evaluation results (all models)
+│   └── *.json                      # Individual model reports
 │
-├── logs/                          # Pipeline logs
-│   ├── pipeline_log.txt
-│   └── validation_*.json
+├── logs/                           # Pipeline logs
+│   └── *_validation_report.json    # ONNX validation reports
 │
-├── output/                        # Traffic analysis output
-│   └── traffic_analysis_output.mp4
+├── output/                         # Traffic analysis output
+│   └── *.mp4                       # Annotated videos
 │
-├── requirement.yml                # Conda environment specification
-├── .gitignore                     # Git ignore rules
-└── README.md                      # This file
+├── requirement.yml                 # Conda environment specification
+├── .gitignore                      # Git ignore rules
+└── README.md                       # This file
 ```
 
 ---
@@ -175,58 +182,164 @@ flowchart TD
 
 ### Running the Pipeline
 
-#### 1. Benchmark All Models
+#### 1. Quantize Models
+
+Convert FP32 ONNX models to FP16:
+
+```bash
+python src/quantization/run.py --model best_decoded
+```
+
+With validation:
+```bash
+python src/quantization/run.py --model best_decoded --validate
+```
+
+Validate existing model:
+```bash
+python src/quantization/run.py --validate-only weights/best_decoded.onnx
+```
+
+Output:
+- `weights/{model}_fp16.onnx` - Quantized FP16 model
+- `logs/{model}_validation_report.json` - Validation report (if --validate used)
+
+**Quantization Workflow (FP32 → FP16):**
+
+```mermaid
+flowchart TD
+    A[FP32 ONNX Model] --> B[Load Model<br/>onnx.load]
+    B --> C[Convert FP32 to FP16<br/>convert_float_to_float16]
+    C --> D[Shape Inference<br/>onnx.shape_inference]
+    D --> E[ONNX Checker<br/>onnx.checker.check_model]
+    E --> F{Checker<br/>Passed?}
+    
+    F -->|Yes| G[Save FP16 Model<br/>~50% size reduction]
+    F -->|No| H[Error: Invalid Model]
+    
+    G --> I{Optional<br/>Validation?}
+    
+    I -->|Yes| J[Load FP16 Model]
+    J --> K[ONNX Checker]
+    K --> L[Shape Inference]
+    L --> M[Runtime Inference Test<br/>ONNX Runtime]
+    M --> N{Inference<br/>Success?}
+    
+    N -->|Yes| O[Generate Validation Report<br/>JSON]
+    N -->|No| P[Skip Runtime Test<br/>CUDA may be required]
+    
+    I -->|No| Q[Complete]
+    O --> Q
+    P --> Q
+    
+    style A fill:#e1f5ff
+    style G fill:#fff4e1
+    style O fill:#f0f0f0
+    style H fill:#ffe1e1
+    style P fill:#fff4e1
+    style Q fill:#e1ffe1
+```
+
+**Validation Workflow Details:**
+
+```mermaid
+flowchart TD
+    A[ONNX Model Path] --> B[Load Model]
+    B --> C[ONNX Checker<br/>Validate structure]
+    C --> D[Shape Inference<br/>Infer tensor shapes]
+    D --> E[Runtime Inference<br/>Dummy forward pass]
+    
+    E --> F{Provider<br/>Available?}
+    F -->|CUDA| G[Use CUDAExecutionProvider]
+    F -->|CPU| H[Use CPUExecutionProvider]
+    
+    G --> I[Run Inference]
+    H --> I
+    
+    I --> J{Success?}
+    J -->|Yes| K[Extract Output Info<br/>shape, dtype, min/max/mean]
+    J -->|No| L[Error Handler<br/>CUDA required for FP16]
+    
+    K --> M[Get Graph Info<br/>nodes, inputs, outputs]
+    M --> N[Generate Report<br/>JSON format]
+    L --> N
+    
+    N --> O[Save to logs/]
+    
+    style A fill:#e1f5ff
+    style N fill:#f0f0f0
+    style O fill:#e1ffe1
+    style L fill:#fff4e1
+```
+
+#### 2. Benchmark 
+##### Benchmark all Models
 
 Scan weights/ directory for all model pairs, run benchmarks, and export results:
 
 ```bash
-python benchmark/benchmark_all_models.py
+python src/benchmarking/run.py --all
 ```
 
 Output:
 - `reports/*_benchmark_results.json` - Individual benchmark reports
 - `reports/benchmark_summary.xlsx` - Summary Excel with all models
 
-#### 2. Benchmark Single Model
+###### Benchmark Single Model
 
 ```bash
-python benchmark/benchmark_single.py --model magnitude_0.3_decoded
+python src/benchmarking/run.py --model best_decoded
 ```
 
-#### 3. Evaluate All Models
+With custom iterations:
+```bash
+python src/benchmarking/run.py --model best_decoded --iterations 200 --warmup 20
+```
+
+#### 4. Evaluate Models
 
 Scan weights/ directory for all model pairs, run COCO evaluation, and export results:
-
+##### Evaluate all models
 ```bash
-python evaluation/evaluate_all_models.py
+python src/evaluation/run.py --all
 ```
 
 Output:
 - `reports/*_evaluation_results.json` - Individual evaluation reports
 - `reports/evaluation_summary.xlsx` - Summary Excel with mAP metrics
 
-#### 4. Evaluate Single Model
+##### Evaluate Single Model
 
 ```bash
-python evaluation/evaluate_single.py --model magnitude_0.3_decoded
+python src/evaluation/run.py --model best_decoded
 ```
 
-#### 5. Traffic Analysis Demo
+With custom thresholds:
+```bash
+python src/evaluation/run.py --model best_decoded --conf 0.30 --iou 0.50 --max-images 1000
+```
+
+#### 6. Traffic Analysis Demo
 
 Run vehicle detection and counting on video:
 
 ```bash
-python app/main.py --video path/to/input.mp4 --model weights/magnitude_0.3_decoded_fp16.onnx
+python app/run_demo.py --video dataset/video.mp4
+```
+
+With specific model:
+```bash
+python app/run_demo.py --video dataset/video.mp4 --model weights/best_decoded_fp16.onnx
 ```
 
 With options:
 ```bash
-python app/main.py \
+python app/run_demo.py \
     --video input.mp4 \
-    --model weights/magnitude_0.3_decoded_fp16.onnx \
+    --model weights/best_decoded_fp16.onnx \
     --output output/my_result.mp4 \
-    --conf-threshold 0.25 \
-    --iou-threshold 0.45 \
+    --conf 0.25 \
+    --iou 0.45 \
     --show-preview \
     --max-frames 500
 ```
@@ -262,11 +375,22 @@ Output:
 **Excel Columns:**
 - Model, Precision, Recall, mAP50, mAP50-95, Num Images, Num Predictions, Eval Time, Notes
 
+#### Validation Reports
+
+| File | Description |
+|------|-------------|
+| `logs/{model}_validation_report.json` | ONNX model validation results |
+
+**Report Contents:**
+- Checker pass/fail status
+- Runtime inference test results
+- Model metadata (inputs, outputs, opset)
+
 #### Traffic Analysis
 
 | File | Description |
 |------|-------------|
-| `output/traffic_analysis_output.mp4` | Annotated video with detections and counts |
+| `output/traffic_analysis_{video_name}.mp4` | Annotated video with detections and counts |
 
 **Console Output:**
 ```
@@ -286,7 +410,7 @@ TOTAL          :  479
 
 ### Centralized Configuration
 
-All configuration is in `quantize/config.py`:
+All configuration is in `src/core/config.py`:
 
 ```python
 # Model paths
@@ -310,6 +434,14 @@ BENCHMARK_CONFIG = {
     "iou_threshold": 0.45,
 }
 
+# Model parameters
+MODEL_CONFIG = {
+    "input_size": 640,
+    "num_classes": 80,
+    "conf_threshold": 0.25,
+    "iou_threshold": 0.45,
+}
+
 # Traffic analysis configuration
 TRAFFIC_CONFIG = {
     "vehicle_class_ids": [1, 2, 3, 5, 7],  # bicycle, car, motorcycle, bus, truck
@@ -329,7 +461,7 @@ TRAFFIC_CONFIG = {
 
 ## Module Description
 
-### quantize/config.py
+### src/core/config.py
 
 **Purpose**: Centralized configuration management.
 
@@ -343,40 +475,58 @@ TRAFFIC_CONFIG = {
 - ONNX Runtime provider selection
 - Utility functions for directory creation
 
-### benchmark/benchmark_core.py
+### src/quantization/run.py
 
-**Purpose**: Core benchmarking functionality.
+**Purpose**: CLI entry point for quantization workflow.
 
-**Key Components**:
-- `InferenceMetrics` dataclass - Store metrics
-- `ONNXInferenceBenchmark` class - Benchmark single model
-- `load_test_images()` - Load test dataset
-- `compare_benchmarks()` - Calculate improvements
-- `save_results()` - Save JSON results
-- `save_csv()` - Save CSV summary
+**Key Features**:
+- FP32 to FP16 conversion
+- Optional ONNX validation
+- Support for model names or direct paths
+- Validation-only mode for existing models
 
-**Metrics Collected**:
-- Latency: avg, min, max, std, P95, P99 (ms)
-- Throughput: FPS
-- Memory: peak, average (MB)
-- Model size: MB
+**Usage Examples**:
+```bash
+python src/quantization/run.py --model best_decoded
+python src/quantization/run.py --model best_decoded --validate
+python src/quantization/run.py --validate-only weights/model.onnx
+```
 
-### evaluation/evaluation_core.py
+### src/benchmarking/run.py
 
-**Purpose**: COCO evaluation metrics computation.
+**Purpose**: CLI entry point for benchmarking workflow.
 
-**Key Components**:
-- `COCOEvaluator` class - Full evaluation pipeline
-- `evaluate_model()` - Convenience function
-- `compute_coco_metrics()` - Compute metrics from predictions
+**Key Features**:
+- Single model or batch benchmarking
+- FP32 vs FP16 comparison
+- Automatic model pair detection
+- Excel and JSON report generation
 
-**Metrics Computed**:
-- Precision (AP at IoU=.50:.95)
-- Recall (AR at IoU=.50:.95)
-- mAP@0.50 (AP at IoU=.50)
-- mAP@0.50:0.95 (AP at IoU=.50:.95)
+**Usage Examples**:
+```bash
+python src/benchmarking/run.py --model best_decoded
+python src/benchmarking/run.py --all
+python src/benchmarking/run.py --model best_decoded --iterations 200
+```
 
-### util/detector.py
+### src/evaluation/run.py
+
+**Purpose**: CLI entry point for evaluation workflow.
+
+**Key Features**:
+- COCO metric computation
+- Single model or batch evaluation
+- FP32 vs FP16 accuracy comparison
+- Excel and JSON report generation
+
+**Usage Examples**:
+```bash
+python src/evaluation/run.py --model best_decoded
+python src/evaluation/run.py --all
+python src/evaluation/run.py --model best_decoded --max-images 1000
+```
+
+### src/inference/detector.py
 
 **Purpose**: YOLO model wrapper for inference.
 
@@ -384,10 +534,9 @@ TRAFFIC_CONFIG = {
 - `YOLODetector` class - Model loading and inference
 - `detect()` - General object detection
 - `detect_vehicles()` - Vehicle-only detection
-- `preprocess()` - Image preprocessing
-- `postprocess()` - Output post-processing
+- Automatic handling of different ONNX output formats
 
-### util/counter.py
+### src/inference/counter.py
 
 **Purpose**: Vehicle counting logic.
 
@@ -396,7 +545,7 @@ TRAFFIC_CONFIG = {
 - `SimpleCounter` class - Frame-level counting
 - Statistics tracking and reporting
 
-### util/video_processor.py
+### src/inference/video_utils.py
 
 **Purpose**: Video I/O and processing.
 
@@ -405,7 +554,7 @@ TRAFFIC_CONFIG = {
 - `draw_detections()` - Draw bounding boxes
 - `draw_counts()` - Draw vehicle counts on frame
 
-### app/main.py
+### app/run_demo.py
 
 **Purpose**: Traffic analysis demo entry point.
 
@@ -417,40 +566,7 @@ TRAFFIC_CONFIG = {
 
 ---
 
-## Architecture Principles
 
-### Clean Architecture
-
-- **Separation of Concerns**: Each module has single responsibility
-- **Modularity**: Easy to add new features without modifying existing code
-- **Reusability**: Core functions in separate modules, imported by CLI scripts
-- **Extensibility**: Traffic analysis designed for future features (tracking, speed estimation, etc.)
-
-### Code Quality
-
-- Type hints for all functions
-- Comprehensive docstrings
-- Consistent logging
-- Centralized configuration
-- Proper exception handling
-- No duplicate code
-- No hardcoded values
-
-### Future Extensions
-
-The traffic analysis module is designed to easily add:
-- Multi-object tracking (ByteTrack, SORT)
-- Speed estimation
-- Lane detection
-- Traffic statistics (flow, density)
-- License plate detection
-- License plate recognition (OCR)
-
-To add a new feature:
-1. Create new module in `util/` (e.g., `util/tracker.py`)
-2. Import and integrate in `app/main.py`
-3. Add configuration to `quantize/config.py` if needed
-4. No changes to existing modules required
 
 ---
 
@@ -458,7 +574,7 @@ To add a new feature:
 
 ### Issue: "Module not found"
 
-**Solution**: Ensure you're running from the project root directory and all dependencies are installed.
+**Solution**: Ensure you're running from the project root directory and all dependencies are installed. The scripts use `path_setup.py` to configure Python paths automatically.
 
 ### Issue: "CUDAExecutionProvider required for FP16"
 
@@ -472,6 +588,10 @@ To add a new feature:
 
 **Solution**: This is expected behavior. FP16 quantization with `keep_io_types=False` causes CPU ONNX Runtime to perform additional type conversions. For CPU inference, FP32 may be faster. FP16 provides benefits on GPU with CUDAExecutionProvider.
 
+### Issue: "Dataset not found"
+
+**Solution**: Ensure the dataset directory exists at `dataset/coco2017/val2017/` with images and COCO annotations at `dataset/coco2017/annotations/instances_val2017.json`.
+
 ---
 
 ## Recent Updates
@@ -483,29 +603,10 @@ To add a new feature:
 - scores: [1, N] - confidence scores
 - class_ids: [1, N] - predicted class IDs
 
-**Fix**: Updated `util/detector.py` to:
+**Fix**: Updated `src/inference/detector.py` to:
 1. Detect when model outputs 3 tensors
 2. Convert corner format to center format (cx, cy, w, h)
 3. Scale coordinates from normalized [0, 1] to pixel coordinates (640x640)
 4. Create [N, 85] format for post-processing pipeline
 
 **Result**: Vehicle detection now works correctly with all models (FP32 and FP16).
-
-### Demo Results
-
-Successfully tested with `dataset/video_test.mp4`:
-- **Model**: magnitude_0.3_decoded_fp16.onnx
-- **Frames processed**: 100
-- **Vehicles detected**: 1000
-- **Breakdown**: 916 cars, 78 trucks, 6 buses
-- **Average FPS**: ~3.2 FPS (CPU inference)
-- **Output**: output/traffic_analysis_output.mp4 (3.0 MB)
-
-The demo successfully displays:
-- ✅ Confidence scores (e.g., 0.83, 0.81, 0.78)
-- ✅ Class labels (car, truck, bus)
-- ✅ Bounding boxes with color coding per class
-- ✅ Vehicle counts per class
-- ✅ Total vehicle count
-
-

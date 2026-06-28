@@ -1,14 +1,15 @@
 """
-Stage 4: Quantize ONNX FP32 model to FP16.
-Pure FP16 conversion for high performance.
+FP16 quantization for ONNX models.
+Converts FP32 ONNX models to FP16 using onnxconverter_common.
 """
 
 import onnx
 from onnxconverter_common.float16 import convert_float_to_float16
 import logging
 from pathlib import Path
+from typing import Optional
 
-from config import ONNX_FP32_PATH, ONNX_FP16_PATH, QUANTIZATION_CONFIG
+from ..core.config import QUANTIZATION_CONFIG
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ def load_model(path: Path) -> onnx.ModelProto:
 
 
 def convert_fp16(model: onnx.ModelProto) -> onnx.ModelProto:
-    """Convert FP32 to FP16"""
+    """Convert FP32 to FP16."""
     cfg = QUANTIZATION_CONFIG
     fp16_model = convert_float_to_float16(
         model,
@@ -49,11 +50,20 @@ def save_model(model: onnx.ModelProto, path: Path):
     logger.info(f"Saved: {path} ({path.stat().st_size / 1024**2:.2f} MB)")
 
 
-def quantize_model(
-    input_path: Path = ONNX_FP32_PATH,
-    output_path: Path = ONNX_FP16_PATH,
+def quantize_fp16(
+    input_path: Path,
+    output_path: Path,
 ) -> onnx.ModelProto:
-    """Load FP32 → convert to FP16 → save. Returns converted model."""
+    """
+    Load FP32 → convert to FP16 → save. Returns converted model.
+    
+    Args:
+        input_path: Path to FP32 ONNX model
+        output_path: Path to save FP16 ONNX model
+        
+    Returns:
+        Converted FP16 model
+    """
     logger.info("=" * 50)
     logger.info("Quantize FP32 → FP16")
     logger.info("=" * 50)
@@ -69,14 +79,3 @@ def quantize_model(
 
     logger.info("Quantization done")
     return fp16_model
-
-
-def main():
-    """Entry point."""
-    logging.basicConfig(level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()])
-    quantize_model()
-    logger.info("Done")
-
-
-if __name__ == "__main__":
-    main()

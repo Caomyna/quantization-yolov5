@@ -1,12 +1,12 @@
 """
 Image preprocessing utilities for YOLO models.
-Handles resizing, padding, normalization, and batching.
+Single implementation used by all modules (benchmarking, evaluation, inference).
 """
 
 import numpy as np
 import cv2
 from pathlib import Path
-from typing import List, Tuple, Union
+from typing import Tuple, Union
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,16 +16,18 @@ def preprocess_image(
     image: np.ndarray,
     input_size: int = 640,
     normalize: bool = True,
-    to_rgb: bool = True
+    to_rgb: bool = True,
+    dtype: np.dtype = None
 ) -> np.ndarray:
     """
     Preprocess a single image for YOLO inference.
     
     Args:
-        image: Input image (BGR or RGB format)
+        image: Input image (BGR or RGB format from OpenCV)
         input_size: Target size (square)
         normalize: Whether to normalize to [0, 1]
         to_rgb: Whether to convert BGR to RGB
+        dtype: Target dtype (None for auto-detect from model)
         
     Returns:
         Preprocessed tensor [1, 3, input_size, input_size]
@@ -56,13 +58,18 @@ def preprocess_image(
     # Transpose to CHW format and add batch dimension
     tensor = np.transpose(padded, (2, 0, 1))[None, :]
     
+    # Convert to target dtype if specified
+    if dtype is not None:
+        tensor = tensor.astype(dtype)
+    
     return tensor
 
 
 def preprocess_image_path(
     image_path: Union[str, Path],
     input_size: int = 640,
-    normalize: bool = True
+    normalize: bool = True,
+    dtype: np.dtype = None
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Preprocess image from file path.
@@ -71,6 +78,7 @@ def preprocess_image_path(
         image_path: Path to image file
         input_size: Target size
         normalize: Whether to normalize
+        dtype: Target dtype
         
     Returns:
         Tuple of (preprocessed tensor, original image)
@@ -85,15 +93,16 @@ def preprocess_image_path(
         raise ValueError(f"Cannot read image: {image_path}")
     
     # Preprocess
-    tensor = preprocess_image(image, input_size, normalize, to_rgb=True)
+    tensor = preprocess_image(image, input_size, normalize, to_rgb=True, dtype=dtype)
     
     return tensor, image
 
 
 def batch_preprocess(
-    images: List[np.ndarray],
+    images: list,
     input_size: int = 640,
-    normalize: bool = True
+    normalize: bool = True,
+    dtype: np.dtype = None
 ) -> np.ndarray:
     """
     Preprocess a batch of images.
@@ -102,13 +111,14 @@ def batch_preprocess(
         images: List of input images
         input_size: Target size
         normalize: Whether to normalize
+        dtype: Target dtype
         
     Returns:
         Batched tensor [batch_size, 3, input_size, input_size]
     """
     tensors = []
     for img in images:
-        tensor = preprocess_image(img, input_size, normalize, to_rgb=True)
+        tensor = preprocess_image(img, input_size, normalize, to_rgb=True, dtype=dtype)
         tensors.append(tensor)
     
     # Concatenate along batch dimension
@@ -141,11 +151,11 @@ def get_preprocess_params(
 
 
 def denormalize_coordinates(
-    bbox: List[float],
+    bbox: list,
     scale: float,
     pad_h: int,
     pad_w: int
-) -> List[float]:
+) -> list:
     """
     Convert bbox coordinates from model space to original image space.
     

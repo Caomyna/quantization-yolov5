@@ -1,9 +1,8 @@
 """
-Stage 3: Validate ONNX model.
+ONNX model validation.
 Runs checker, shape inference, ONNX Runtime inference, extracts graph info.
-Saves validation_report.json.
 """
-import argparse
+
 import json
 import onnx
 import onnxruntime as ort
@@ -11,7 +10,8 @@ import numpy as np
 import logging
 from pathlib import Path
 from typing import Dict, Any
-from config import ONNX_PROVIDERS, ONNX_FP32_PATH, ONNX_FP16_PATH, LOGS_DIR
+
+from ..core.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -45,12 +45,12 @@ def infer_shapes(model: onnx.ModelProto) -> onnx.ModelProto:
 
 def runtime_inference(model: onnx.ModelProto) -> Dict[str, Any]:
     """Run dummy inference with ONNX Runtime. Return output info."""
-    providers = ONNX_PROVIDERS
+    providers = Config.get_onnx_providers()
     try:
         session = ort.InferenceSession(model.SerializeToString(), providers=providers)
-        # provider_used = session.get_providers()[0]
     except Exception as e:
         raise RuntimeError(f"Failed to create ONNX Runtime session with providers {providers}: {e}")
+    
     input_name = session.get_inputs()[0].name
     input_shape = session.get_inputs()[0].shape
     input_type = session.get_inputs()[0].type
@@ -58,10 +58,7 @@ def runtime_inference(model: onnx.ModelProto) -> Dict[str, Any]:
     output_shape = session.get_outputs()[0].shape
     output_type = session.get_outputs()[0].type
 
-    # Build dummy input matching expected shape
-    # shape = [d if isinstance(d, int) and d > 0 else 1 for d in input_shape]
-    # dummy = np.random.randn(*shape).astype(np.float32)
-    # Tự động xác định kiểu dữ liệu dựa trên mô hình đầu vào
+    # Determine dtype based on model input type
     if "float16" in input_type:
         np_dtype = np.float16
     else:
@@ -69,7 +66,7 @@ def runtime_inference(model: onnx.ModelProto) -> Dict[str, Any]:
 
     # Build dummy input matching expected shape
     shape = [d if isinstance(d, int) and d > 0 else 1 for d in input_shape]
-    dummy = np.random.randn(*shape).astype(np_dtype) # np_dtype linh hoạt
+    dummy = np.random.randn(*shape).astype(np_dtype)
 
     outputs = session.run([output_name], {input_name: dummy})
     actual_output = outputs[0]
@@ -117,7 +114,6 @@ def get_graph_info(model: onnx.ModelProto) -> Dict[str, Any]:
 
 def validate_onnx(path: Path) -> Dict[str, Any]:
     """Run full ONNX validation pipeline."""
-
     logger.info("=" * 50)
     logger.info("Validate ONNX")
     logger.info("=" * 50)
@@ -159,37 +155,3 @@ def save_report(report: Dict[str, Any], output_path: Path):
     with open(output_path, "w") as f:
         json.dump(report, f, indent=2, default=str)
     logger.info(f"Report saved: {output_path}")
-
-
-def main():
-    """Entry point."""
-    logging.basicConfig(level=logging.INFO, format="%(message)s", handlers=[logging.StreamHandler()])
-
-    parser = argparse.ArgumentParser(description="Validate ONNX model")
-    parser.add_argument(
-        "--model",
-        type=Path,
-        required=True,
-        help="Path to ONNX model"
-    )
-
-    parser.add_argument(
-        "--output",
-        type=Path,
-        default=LOGS_DIR / "validation_report.json",
-        help="Output report path"
-    )
-
-    args = parser.parse_args()
-
-    report = validate_onnx(args.model)
-
-    # report = validate_onnx()
-    save_report(report, LOGS_DIR / "validation_report.json")
-    logger.info("Done")
-
-
-if __name__ == "__main__":
-    main()
-
-# python src/validate_onnx.py --model models/yolov5s_fp16.onnx

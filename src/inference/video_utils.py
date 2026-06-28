@@ -1,12 +1,12 @@
 """
 Video processing utilities for traffic analysis.
-Handles video I/O, frame processing, and output video generation.
+
 """
 
 import cv2
 import numpy as np
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple, Generator
+from typing import Dict, List, Any, Optional, Tuple
 import logging
 from tqdm import tqdm
 
@@ -136,7 +136,7 @@ class VideoProcessor:
         process_fn,
         max_frames: Optional[int] = None,
         show_progress: bool = True,
-    ) -> Generator[Tuple[int, np.ndarray, Any], None, None]:
+    ):
         """
         Process video frames with a custom function.
         
@@ -271,7 +271,7 @@ def draw_detections(
     for det in detections:
         bbox = det["bbox"]
         class_id = det.get("class_id", 0)
-        confidence = det.get("confidence", 0.0)
+        confidence = det.get("score", det.get("confidence", 0.0))
         
         # Get class name and color
         class_name = class_names.get(class_id, f"class_{class_id}")

@@ -8,14 +8,8 @@ __pycache__/
 models/
 yolov5/
 dataset/
-!dataset/video_test.mp4
 
-utils/visualization.py
-utils/tracker.py
-
-README.md
 Report.md
-quantize/visualize_benchmark.py
 
 logs/
 
